@@ -303,100 +303,236 @@ GREETINGS_M = [
 api = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
+# ה-ID של בעל הבוט
+OWNER_USER_ID = 919782824
+
+# False = מצב ברכות
+# True = מצב קללות
+curse_mode = False
+
+
 # ====== Helpers ======
 
 def pick_random_greeting(is_female: bool) -> str:
     pool = GREETINGS_F if is_female else GREETINGS_M
     return random.choice(pool)
 
+
+def pick_random_curse(is_female: bool) -> str:
+    pool = GREETINGS_HF if is_female else GREETINGS_HM
+    return random.choice(pool)
+
+
 def is_special_user(user: Optional[User]) -> bool:
     return bool(user and user.id in SPECIAL_USER_IDS)
 
+
+def is_owner(user: Optional[User]) -> bool:
+    return bool(user and user.id == OWNER_USER_ID)
+
+
 # ====== Handlers ======
 
-async def handle_greeting(update: Update, context: ContextTypes.DEFAULT_TYPE, is_female: bool):
+async def change_mode(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    global curse_mode
+
+    user = update.effective_user
+    msg = update.effective_message
+
+    if not user or not msg:
+        return
+
+    # רק בעל הבוט יכול לשנות מצב
+    if not is_owner(user):
+        return
+
+    curse_mode = not curse_mode
+
+    if curse_mode:
+        # הבוט עבר למצב קללות
+        await msg.reply_text("😈")
+        logging.info(
+            f"Bot mode changed to curses by user {user.id}"
+        )
+    else:
+        # הבוט חזר למצב ברכות
+        await msg.reply_text("😇")
+        logging.info(
+            f"Bot mode changed to greetings by user {user.id}"
+        )
+
+
+async def handle_greeting(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    is_female: bool
+):
     chat = update.effective_chat
     user = update.effective_user
     msg = update.effective_message
-    
+
     if not chat or not msg:
         return
 
     # מניעת הפעלה עצמית של המשתמש המיוחד
+    # בעל הבוט עדיין יכול להשתמש ב-/change
     if is_special_user(user):
         try:
-            await context.bot.delete_message(chat_id=chat.id, message_id=msg.message_id)
-        except: pass
+            await context.bot.delete_message(
+                chat_id=chat.id,
+                message_id=msg.message_id
+            )
+        except Exception:
+            pass
         return
 
-    # בדיקה למי עונים - שליפת הודעת המקור
+    # ההודעה שעליה הופעלה הפקודה
     reply_to_msg = msg.reply_to_message
-    replied_user = reply_to_msg.from_user if reply_to_msg else None
-    
-    # ה-ID של ההודעה שעליה נגיב (אם זו לא תגובה, הבוט פשוט ישלח הודעה רגילה)
-    reply_to_id = reply_to_msg.message_id if reply_to_msg else None
+    replied_user = (
+        reply_to_msg.from_user
+        if reply_to_msg
+        else None
+    )
 
-    # בחירת טקסט האיחול
-    if chat.id in SPECIAL_CHAT_IDS:
-        text = random.choice(GREETINGS_HF if is_female else GREETINGS_HM)
+    reply_to_id = (
+        reply_to_msg.message_id
+        if reply_to_msg
+        else None
+    )
+
+    # בחירת ברכה או קללה לפי מצב הבוט
+    if curse_mode:
+        # במצב קללות:
+        # /at משתמש ב-GREETINGS_HF
+        # /ata משתמש ב-GREETINGS_HM
+        text = pick_random_curse(is_female)
+
+    elif chat.id in SPECIAL_CHAT_IDS:
+        # ההתנהגות המיוחדת הקודמת של הקבוצה
+        text = pick_random_curse(is_female)
+
     elif is_special_user(replied_user):
-        text = random.choice(GREETINGS_HF if is_female else GREETINGS_HM)
+        # ההתנהגות המיוחדת הקודמת למשתמש
+        text = pick_random_curse(is_female)
+
     else:
+        # מצב ברירת המחדל: ברכות
         text = pick_random_greeting(is_female)
 
-    # שליחה עם הגדרה מפורשת לעשות Reply
     try:
         await context.bot.send_message(
             chat_id=chat.id,
             text=text,
-            reply_to_message_id=reply_to_id, # כאן הקסם קורה
+            reply_to_message_id=reply_to_id,
             disable_web_page_preview=True
         )
+
     except Exception as e:
         logging.error(f"Error sending message: {e}")
-        # במקרה חירום שבו ה-reply_to_id לא תקף, נשלח בלי reply
-        await context.bot.send_message(chat_id=chat.id, text=text)
 
-    # מחיקת הודעת הפקודה שלך כדי לשמור על סדר
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=text
+        )
+
+    # מחיקת פקודת /at או /ata
     try:
-        await context.bot.delete_message(chat_id=chat.id, message_id=msg.message_id)
-    except: pass
+        await context.bot.delete_message(
+            chat_id=chat.id,
+            message_id=msg.message_id
+        )
+    except Exception:
+        pass
 
-async def greet_at(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await handle_greeting(update, context, is_female=True)
 
-async def greet_ata(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await handle_greeting(update, context, is_female=False)
+async def greet_at(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    await handle_greeting(
+        update,
+        context,
+        is_female=True
+    )
+
+
+async def greet_ata(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+    await handle_greeting(
+        update,
+        context,
+        is_female=False
+    )
+
 
 # ====== Lifecycle ======
 
 @api.on_event("startup")
 async def on_startup():
-    application.add_handler(CommandHandler("at", greet_at))
-    application.add_handler(CommandHandler("ata", greet_ata))
-    
+    application.add_handler(
+        CommandHandler("at", greet_at)
+    )
+
+    application.add_handler(
+        CommandHandler("ata", greet_ata)
+    )
+
+    application.add_handler(
+        CommandHandler("change", change_mode)
+    )
+
     await application.initialize()
     await application.start()
 
     if PUBLIC_URL:
-        webhook_url = f"{PUBLIC_URL.rstrip('/')}/webhook/{WEBHOOK_SECRET}"
-        await application.bot.set_webhook(url=webhook_url)
-        logging.info(f"Webhook set to: {webhook_url}")
+        webhook_url = (
+            f"{PUBLIC_URL.rstrip('/')}"
+            f"/webhook/{WEBHOOK_SECRET}"
+        )
+
+        await application.bot.set_webhook(
+            url=webhook_url
+        )
+
+        logging.info(
+            f"Webhook set to: {webhook_url}"
+        )
+
 
 @api.on_event("shutdown")
 async def on_shutdown():
     await application.stop()
     await application.shutdown()
 
+
 @api.get("/")
 async def health():
-    return {"status": "greetings-bot-active"}
+    return {
+        "status": "greetings-bot-active",
+        "mode": "curses" if curse_mode else "greetings"
+    }
+
 
 @api.post("/webhook/{secret}")
-async def telegram_webhook(secret: str, request: Request):
+async def telegram_webhook(
+    secret: str,
+    request: Request
+):
     if secret != WEBHOOK_SECRET:
         return {"ok": False}
+
     data = await request.json()
-    update = Update.de_json(data, application.bot)
+
+    update = Update.de_json(
+        data,
+        application.bot
+    )
+
     await application.update_queue.put(update)
+
     return {"ok": True}
