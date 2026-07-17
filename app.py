@@ -306,10 +306,10 @@ application = Application.builder().token(BOT_TOKEN).build()
 # ה-ID של בעל הבוט
 OWNER_USER_ID = 349705105
 
-# False = מצב ברכות
-# True = מצב קללות
-curse_mode = False
-
+# שמירת מצב נפרד לכל קבוצה
+# False או קבוצה שלא קיימת במילון = ברכות
+# True = קללות
+chat_modes = {}
 
 # ====== Helpers ======
 
@@ -330,6 +330,9 @@ def is_special_user(user: Optional[User]) -> bool:
 def is_owner(user: Optional[User]) -> bool:
     return bool(user and user.id == OWNER_USER_ID)
 
+def is_chat_in_curse_mode(chat_id: int) -> bool:
+    return chat_modes.get(chat_id, False)
+
 
 # ====== Handlers ======
 
@@ -337,33 +340,34 @@ async def change_mode(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-    global curse_mode
-
     user = update.effective_user
+    chat = update.effective_chat
     msg = update.effective_message
 
-    if not user or not msg:
+    if not user or not chat or not msg:
         return
 
     # רק בעל הבוט יכול לשנות מצב
-    if not is_owner(user):
+    if user.id != OWNER_USER_ID:
         return
 
-    curse_mode = not curse_mode
+    # המצב הנוכחי של הקבוצה
+    current_mode = chat_modes.get(chat.id, False)
 
-    if curse_mode:
-        # הבוט עבר למצב קללות
+    # החלפת המצב רק בקבוצה שבה הפקודה נשלחה
+    new_mode = not current_mode
+    chat_modes[chat.id] = new_mode
+
+    if new_mode:
         await msg.reply_text("😈")
         logging.info(
-            f"Bot mode changed to curses by user {user.id}"
+            f"Chat {chat.id} changed to curse mode by {user.id}"
         )
     else:
-        # הבוט חזר למצב ברכות
         await msg.reply_text("😇")
         logging.info(
-            f"Bot mode changed to greetings by user {user.id}"
+            f"Chat {chat.id} changed to greeting mode by {user.id}"
         )
-
 
 async def handle_greeting(
     update: Update,
@@ -404,23 +408,17 @@ async def handle_greeting(
     )
 
     # בחירת ברכה או קללה לפי מצב הבוט
-    if curse_mode:
-        # במצב קללות:
-        # /at משתמש ב-GREETINGS_HF
-        # /ata משתמש ב-GREETINGS_HM
-        text = pick_random_curse(is_female)
+if is_chat_in_curse_mode(chat.id):
+    # מצב קללות בקבוצה הנוכחית
+    text = pick_random_curse(is_female)
 
-    elif chat.id in SPECIAL_CHAT_IDS:
-        # ההתנהגות המיוחדת הקודמת של הקבוצה
-        text = pick_random_curse(is_female)
+elif is_special_user(replied_user):
+    # אם עונים למשתמש המיוחד, תמיד קללות
+    text = pick_random_curse(is_female)
 
-    elif is_special_user(replied_user):
-        # ההתנהגות המיוחדת הקודמת למשתמש
-        text = pick_random_curse(is_female)
-
-    else:
-        # מצב ברירת המחדל: ברכות
-        text = pick_random_greeting(is_female)
+else:
+    # ברירת מחדל: ברכות
+    text = pick_random_greeting(is_female)
 
     try:
         await context.bot.send_message(
@@ -514,7 +512,11 @@ async def on_shutdown():
 async def health():
     return {
         "status": "greetings-bot-active",
-        "mode": "curses" if curse_mode else "greetings"
+        "curse_mode_chats": [
+            chat_id
+            for chat_id, mode in chat_modes.items()
+            if mode
+        ]
     }
 
 
