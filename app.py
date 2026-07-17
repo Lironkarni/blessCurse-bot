@@ -382,7 +382,6 @@ async def handle_greeting(
         return
 
     # מניעת הפעלה עצמית של המשתמש המיוחד
-    # בעל הבוט עדיין יכול להשתמש ב-/change
     if is_special_user(user):
         try:
             await context.bot.delete_message(
@@ -395,6 +394,7 @@ async def handle_greeting(
 
     # ההודעה שעליה הופעלה הפקודה
     reply_to_msg = msg.reply_to_message
+
     replied_user = (
         reply_to_msg.from_user
         if reply_to_msg
@@ -407,19 +407,20 @@ async def handle_greeting(
         else None
     )
 
-    # בחירת ברכה או קללה לפי מצב הבוט
-if is_chat_in_curse_mode(chat.id):
-    # מצב קללות בקבוצה הנוכחית
-    text = pick_random_curse(is_female)
+    # בחירת ברכה או קללה לפי מצב הקבוצה
+    if is_chat_in_curse_mode(chat.id):
+        # מצב קללות בקבוצה הנוכחית
+        text = pick_random_curse(is_female)
 
-elif is_special_user(replied_user):
-    # אם עונים למשתמש המיוחד, תמיד קללות
-    text = pick_random_curse(is_female)
+    elif is_special_user(replied_user):
+        # אם עונים למשתמש המיוחד, תמיד קללות
+        text = pick_random_curse(is_female)
 
-else:
-    # ברירת מחדל: ברכות
-    text = pick_random_greeting(is_female)
+    else:
+        # ברירת מחדל: ברכות
+        text = pick_random_greeting(is_female)
 
+    # שליחת ההודעה
     try:
         await context.bot.send_message(
             chat_id=chat.id,
@@ -431,6 +432,7 @@ else:
     except Exception as e:
         logging.error(f"Error sending message: {e}")
 
+        # אם השליחה כתגובה נכשלה, שולחים בלי Reply
         await context.bot.send_message(
             chat_id=chat.id,
             text=text
