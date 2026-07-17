@@ -304,7 +304,7 @@ api = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
 # ה-ID של בעל הבוט
-OWNER_USER_ID = 919782824
+OWNER_USER_ID = 349705105
 
 # False = מצב ברכות
 # True = מצב קללות
